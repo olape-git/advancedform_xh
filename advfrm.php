@@ -133,11 +133,11 @@ function Advancedform_focusField($form_id, $name)
     }
     Advancedform_initJQuery();
     $hjs .= <<<SCRIPT
-<script type="text/javascript">/* <![CDATA[ */
+<script>
 jQuery(function() {
     jQuery('.advfrm-mailform form[name="$form_id"] *[name="$name"]').focus()
 })
-/* ]]> */</script>
+</script>
 
 SCRIPT;
     define('ADVFRM_FIELD_FOCUSED', true);
@@ -176,7 +176,7 @@ function Advancedform_initJQuery()
     $fn = $pth['folder']['plugins']
         . 'advancedform/languages/jquery.ui.datepicker-' . $lang . '.js';
     if (file_exists($fn)) {
-        $hjs .= '<script type="text/javascript" src="' . $fn . '"></script>'
+        $hjs .= '<script src="' . $fn . '"></script>'
             . PHP_EOL;
     } else {
         if ($sl != 'en') {
@@ -185,12 +185,12 @@ function Advancedform_initJQuery()
     }
     $hjs .= <<<SCRIPT
 
-<script type="text/javascript">/* <![CDATA[ */
+<script>
 jQuery(function() {
     jQuery.datepicker.setDefaults(jQuery.datepicker.regional['$lang']);
     jQuery.datepicker.setDefaults({dateFormat: '$date_format'});
 })
-/* ]]> */</script>
+</script>
 
 SCRIPT;
     define('ADVFRM_JQUERY_INITIALIZED', true);
@@ -885,7 +885,7 @@ function Advancedform_displayField($form_id, $field)
                 $iconPath = $pth['folder']['plugins']
                     . 'advancedform/images/calendar.png';
                 $hjs .= <<<EOS
-<script type="text/javascript">/* <![CDATA[ */
+<script>
 jQuery(function() {
     jQuery('.advfrm-mailform form[name="$form_id"] input[name="$name"]')
         .datepicker({
@@ -894,7 +894,7 @@ jQuery(function() {
             buttonImageOnly: true
         })
 });
-/* ]]> */</script>
+</script>
 
 EOS;
             }
@@ -1002,7 +1002,7 @@ function Advancedform_templateView($id)
     }
     $fn = Advancedform_dataFolder() . 'js/' . $id . '.js';
     if (file_exists($fn)) {
-        $hjs .= '<script type="text/javascript" src="' . $fn . '"></script>'
+        $hjs .= '<script src="' . $fn . '"></script>'
             . PHP_EOL;
     }
 
@@ -1050,8 +1050,26 @@ function Advancedform_formView($id)
     $o .= '<div class="advfrm-mailform">' . PHP_EOL
         . '<form name="' . $id . '" action="' . $sn . '?' . ($f === 'mailform' ? '&mailform' : $su)  . '" method="post"'
         . ' enctype="multipart/form-data" accept-charset="UTF-8">' . PHP_EOL
-        . tag('input type="hidden" name="advfrm" value="'.$id.'"') . PHP_EOL
-        . '<div class="required">'
+        . tag('input type="hidden" name="advfrm" value="'.$id.'"') . PHP_EOL;
+        if (!$form['captcha']) {
+            // Spam protection by time
+            if (empty($_POST['advfrm-' . $id . '-time'])) {
+                $o .= '<input type="hidden" name="advfrm-'
+                    . $id
+                    . '-time" value="'
+                    . time()
+                    . '">'
+                    . PHP_EOL;
+            } else {
+                $o .= '<input type="hidden" name="advfrm-'
+                    . $id
+                    . '-time" value="'
+                    . $_POST['advfrm-' . $id . '-time']
+                    . '">'
+                    . PHP_EOL;
+            }
+        }
+        $o .= '<div class="required">'
         . sprintf(
             $ptx['message_required_fields'],
             sprintf($pcf['required_field_mark'], $ptx['message_required_field'])
@@ -1091,8 +1109,29 @@ function Advancedform_check($id)
     $pcf = $plugin_cf['advancedform'];
     $ptx = $plugin_tx['advancedform'];
     $o = '';
+
     $forms = Advancedform_db();
     $form = $forms[$id];
+    // Spam protection by time
+    if (!$form['captcha']) {
+        // less than 8s
+        $load_time = $_POST['advfrm-' . $id . '-time'];
+        $cur_time = time();
+        if (intval($load_time) > $cur_time - 8) {
+            return $o .= '<ul class="advfrm-error"><li>'
+                       . 'Time-Error - Spam?'
+                       . '</li></ul>'
+                       . PHP_EOL;
+        }
+        // more than 30m
+        if (intval($load_time) < $cur_time - 1800) {
+            $_POST['advfrm-' . $id . '-time'] = '';
+            return $o .= '<ul class="advfrm-error"><li>'
+                       . 'Time-Error - Spam?'
+                       . '</li></ul>'
+                       . PHP_EOL;
+        }
+    }
     foreach ($form['fields'] as $field) {
         $name = 'advfrm-' . $field['field'];
         if ($field['type'] != 'file' && $field['type'] != 'multi_select'
@@ -1236,9 +1275,12 @@ function Advancedform_check($id)
             Advancedform_focusField($id, 'advancedform-captcha');
         }
     }
-    return $o == ''
-        ? true
-        : '<ul class="advfrm-error">' . PHP_EOL . $o . '</ul>' . PHP_EOL;
+    if ($o == '') {
+        $_POST['advfrm-' . $id . '-time'] = '';
+        return true;
+    } else {
+        return '<ul class="advfrm-error">' . PHP_EOL . $o . '</ul>' . PHP_EOL;
+    }
 }
 
 /**
@@ -1321,7 +1363,7 @@ function Advancedform_mail($id, $confirmation)
             'Subject',
             sprintf(
                 $ptx['mail_subject'], $form['title'],
-                $_SERVER['SERVER_NAME'], $_SERVER['REMOTE_ADDR']
+                $_SERVER['SERVER_NAME'], Anonymize_Server_IP()
             )
         );
     }
@@ -1439,6 +1481,13 @@ function Advancedform_main($id)
         }
     }
     return Advancedform_formView($id);
+}
+
+function Anonymize_Server_IP() {
+    //only the last octet
+    //return preg_replace('/[0-9]+\z/', '0', $_SERVER['REMOTE_ADDR']);
+    //the two last octets
+    return preg_replace('/[0-9]+\.[0-9]+\z/', '0.0', $_SERVER['REMOTE_ADDR']);
 }
 
 ?>
