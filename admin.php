@@ -109,8 +109,10 @@ function Advancedform_systemCheck()
     }
     $o .= tag('br') . (strtoupper($tx['meta']['codepage']) == 'UTF-8' ? $ok : $warn)
         . '&nbsp;&nbsp;' . $ptx['syscheck_encoding'] . tag('br') . PHP_EOL;
-    $o .= (!get_magic_quotes_runtime() ? $ok : $warn)
-        . '&nbsp;&nbsp;' . $ptx['syscheck_magic_quotes'] . tag('br') . PHP_EOL;
+    if (version_compare(PHP_VERSION, '7.4', '<')) {
+        $o .= (!get_magic_quotes_runtime() ? $ok : $warn)
+            . '&nbsp;&nbsp;' . $ptx['syscheck_magic_quotes'] . tag('br') . PHP_EOL;
+    }
     $filename = $pth['folder']['plugins'] . 'jquery/jquery.inc.php';
     $o .= (file_exists($filename) ? $ok : $fail)
         . '&nbsp;&nbsp;' . $ptx['syscheck_jquery'] . tag('br') . PHP_EOL;
