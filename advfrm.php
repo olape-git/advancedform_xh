@@ -772,7 +772,9 @@ function Advancedform_prefixFileExtensionList($list)
 {
     $extensions = explode(',', $list);
     $func = function ($x) {
-        return '.' . $x;
+        $x = trim($x);
+        $x = '.' . strtolower($x) . ',' . '.' . strtoupper($x);
+        return $x;
     };
     $extensions = array_map($func, $extensions);
     $list = implode(',', $extensions);
